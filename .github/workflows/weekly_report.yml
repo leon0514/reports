@@ -143,7 +143,7 @@ jobs:
         if: steps.check_date.outputs.should_send == 'true'
         uses: dawidd6/action-send-mail@v3
         with:
-          server_address: smtp.qq.com
+          server_address: smtp.qiye.aliyun.com
           server_port: 465
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
