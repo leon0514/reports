@@ -1,3 +1,11 @@
+name: Send Weekly Report
+
+# 添加这部分来定义触发条件
+on:
+  push:
+    branches:
+      - main  # 或者您的主分支名称，如 master
+
 jobs:
   check-and-send:
     runs-on: ubuntu-latest
