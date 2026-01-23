@@ -1,11 +1,8 @@
 name: 定时发送新周报
 
 on:
-  # 1. 定时触发：北京时间每周五 18:00 (UTC 10:00)
   schedule:
     - cron: '0 10 * * 5'
-    
-  # 2. 手动触发按钮 (方便调试)
   workflow_dispatch:
 
 jobs:
