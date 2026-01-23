@@ -3,7 +3,7 @@ name: 定时发送新周报
 on:
   schedule:
     - cron: '0 10 * * 5'
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 jobs:
   check-and-send:
@@ -156,5 +156,5 @@ jobs:
           # 收件人与抄送
           to: ${{ secrets.MAIL_TO }}
           cc: ${{ secrets.MAIL_CC }}
-          from: "耀安科技AI研发部"
+          from: "耀安科技AI应用研发部"
           secure: true
