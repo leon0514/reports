@@ -1,0 +1,82 @@
+jobs:
+  check-and-send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      # 1. 检查最新文件
+      - name: Check for recent updates
+        id: check_date
+        run: |
+          MAX_AGE_SECONDS=259200
+          REPORT_DIR="reports"
+          LATEST_FILE=$(ls -t $REPORT_DIR/*.md 2>/dev/null | grep -v template.md | head -n 1)
+          
+          if [ -z "$LATEST_FILE" ]; then
+            echo "should_send=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "LATEST_FILE=$LATEST_FILE" >> $GITHUB_ENV
+          
+          FILE_COMMIT_TIME=$(git log -1 --format=%ct "$LATEST_FILE")
+          CURRENT_TIME=$(date +%s)
+          DIFF=$((CURRENT_TIME - FILE_COMMIT_TIME))
+          
+          if [ $DIFF -lt $MAX_AGE_SECONDS ]; then
+            echo "✅ Found new report: $LATEST_FILE"
+            echo "should_send=true" >> $GITHUB_OUTPUT
+            START_DATE=$(date -d "$(date +%u) days ago + 1 day" +'%Y年%m月%d日')
+            END_DATE=$(date -d "$(date +%u) days ago + 5 days" +'%m月%d日')
+            echo "CURRENT_DATE=${START_DATE}~${END_DATE}" >> $GITHUB_ENV
+          else
+            echo "should_send=false" >> $GITHUB_OUTPUT
+          fi
+
+      # 2. 设置 Python
+      - name: Set up Python
+        if: steps.check_date.outputs.should_send == 'true'
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      # 3. 转换 HTML (关键修改步骤)
+      - name: Convert Markdown to HTML
+        if: steps.check_date.outputs.should_send == 'true'
+        run: |
+          # 运行 Python 脚本并将输出保存到 email_body.html 文件
+          python convert_to_html.py "$LATEST_FILE" > email_body.html
+          
+          # 检查一下文件是否生成成功（调试用）
+          echo "HTML content preview:"
+          head -n 5 email_body.html
+          
+          # 将文件内容读取到环境变量 HTML_BODY 中 (标准 GitHub Actions 写法)
+          echo "HTML_BODY<<EOF" >> $GITHUB_ENV
+          cat email_body.html >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      # 4. 发送邮件
+      - name: Send mail
+        if: steps.check_date.outputs.should_send == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.qiye.aliyun.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "AI应用研发部-唐立杨 【算法】- ${{ env.CURRENT_DATE }} 周报"
+          
+          # 引用刚才生成的环境变量
+          html_body: ${{ env.HTML_BODY }}
+          
+          # 必须明确指定是 HTML
+          content_type: text/html
+          
+          to: ${{ secrets.MAIL_TO }}
+          cc: ${{ secrets.MAIL_CC }}
+          from: "GitHub Weekly Bot"
+          secure: true
