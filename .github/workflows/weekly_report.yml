@@ -156,5 +156,5 @@ jobs:
           # 收件人与抄送
           to: ${{ secrets.MAIL_TO }}
           cc: ${{ secrets.MAIL_CC }}
-          from: "耀安科技AI应用研发部"
+          from: "耀安科技AI应用研发部算法 唐立杨"
           secure: true
