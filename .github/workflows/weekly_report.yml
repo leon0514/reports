@@ -1,8 +1,6 @@
 name: 定时发送新周报
 
 on:
-  schedule:
-    - cron: '10 10 * * 5'
   workflow_dispatch: {}
 
 jobs:
