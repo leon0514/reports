@@ -146,7 +146,7 @@ jobs:
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
           # 邮件标题：周报 - 2026年01月19日~01月23日 - 唐立杨
-          subject: "周报 - ${{ env.CURRENT_DATE }} - 唐立杨"
+          subject: "周报 - ${{ env.CURRENT_DATE }} - ${{ secrets.USER}}"
           
           # 邮件正文 (HTML)
           html_body: ${{ env.HTML_BODY }}
@@ -154,5 +154,5 @@ jobs:
           # 收件人与抄送
           to: ${{ secrets.MAIL_TO }}
           cc: ${{ secrets.MAIL_CC }}
-          from: "耀安科技AI应用研发部算法 唐立杨"
+          from: "耀安科技AI应用研发部算法 ${{ secrets.USER }}"
           secure: true
