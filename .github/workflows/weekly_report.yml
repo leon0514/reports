@@ -13,8 +13,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      # --- 步骤 2: 检查是否有新周报 & 计算日期 ---
-      - name: Check for recent updates
+      # --- 步骤 2: 检查是否有新周报 & 计算日期 & 解析收件人 ---
+      - name: Check for recent updates and parse recipients
         id: check_date
         run: |
           # 配置：3天内修改过的文件算“新周报”
@@ -33,6 +33,29 @@ jobs:
           # 保存文件名供后面使用
           echo "LATEST_FILE=$LATEST_FILE" >> $GITHUB_ENV
           
+          # --- 新增：从 Markdown 文件中解析收件人和抄送人 ---
+          # 格式: <!-- to: name@example.com --> 或 <!-- cc: name@example.com -->
+          MAIL_TO=$(grep -i "<!-- to:" "$LATEST_FILE" | sed -e 's/<!-- to: *//' -e 's/ *-->//' | tr -d '\r')
+          MAIL_CC=$(grep -i "<!-- cc:" "$LATEST_FILE" | sed -e 's/<!-- cc: *//' -e 's/ *-->//' | tr -d '\r')
+          
+          if [ -z "$MAIL_TO" ]; then
+            echo "❌ 错误：在 $LATEST_FILE 中未找到收件人信息。请确保文件包含 '<!-- to: xxx@xxx.com -->' 格式的注释。"
+            echo "should_send=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "解析出的收件人: $MAIL_TO"
+          echo "MAIL_TO=$MAIL_TO" >> $GITHUB_ENV
+          
+          if [ -n "$MAIL_CC" ]; then
+            echo "解析出的抄送人: $MAIL_CC"
+            echo "MAIL_CC=$MAIL_CC" >> $GITHUB_ENV
+          else
+            echo "未找到抄送人信息，将不进行抄送。"
+            echo "MAIL_CC=" >> $GITHUB_ENV # 确保CC为空
+          fi
+
+          # --- 检查文件是否为新文件 ---
           FILE_COMMIT_TIME=$(git log -1 --format=%ct "$LATEST_FILE")
           CURRENT_TIME=$(date +%s)
           DIFF=$((CURRENT_TIME - FILE_COMMIT_TIME))
@@ -41,8 +64,7 @@ jobs:
             echo "✅ 发现新周报: $LATEST_FILE"
             echo "should_send=true" >> $GITHUB_OUTPUT
             
-            # --- 日期计算逻辑 (自动算本周一到本周五) ---
-            # 逻辑：回退到上周日，然后分别 +1天(周一) 和 +5天(周五)
+            # --- 日期计算逻辑 ---
             START_DATE=$(date -d "$(date +%u) days ago + 1 day" +'%Y年%m月%d日')
             END_DATE=$(date -d "$(date +%u) days ago + 5 days" +'%m月%d日')
             
@@ -61,12 +83,11 @@ jobs:
           python-version: '3.x'
 
       # --- 步骤 4: 生成 Python 转换脚本并运行 ---
-      # (直接在这里写入脚本，避免仓库里缺少文件)
       - name: Generate and Run Converter
         if: steps.check_date.outputs.should_send == 'true'
         run: |
-          # 1. 将 Python 代码写入临时文件 convert.py
-          cat << 'EOF' > convert.py
+          # 注意：这里的 'EOF' 已被移除，以允许表达式求值
+          cat << EOF > convert.py
           import sys, re
           
           def parse_markdown(file_path):
@@ -81,12 +102,12 @@ jobs:
                   pattern = re.compile(rf'### {title}\s*(.*?)\s*(?=###|$)', re.DOTALL)
                   match = pattern.search(content)
                   if match:
-                      lines = [line.strip() for line in match.group(1).split('\n') if line.strip()]
+                      lines = [line.strip() for line in match.group(1).split('\n') if line.strip() and not line.strip().startswith('<!--')]
                       return "".join([f'<div style="margin-bottom:4px;">{l}</div>' for l in lines])
                   return "暂无内容"
 
               title_match = re.search(r'^#\s+(.*)', content, re.MULTILINE)
-              report_title = title_match.group(1) if title_match else "周报"
+              report_title = title_match.group(1).strip() if title_match else "周报"
 
               return {
                   "title": report_title,
@@ -101,7 +122,7 @@ jobs:
               <!DOCTYPE html>
               <html><body>
               <table border="1" cellspacing="0" cellpadding="0" style="width:100%;max-width:800px;border-collapse:collapse;font-family:'Microsoft YaHei',Arial,sans-serif;font-size:14px;color:#333;">
-                  <tr style="background-color:#E7E6E6;"><td colspan="4" style="padding:15px;text-align:center;font-weight:bold;font-size:16px;border:1px solid #999;">AI应用研发部 - 唐立杨 【AI算法工程师】 - {data['title']}</td></tr>
+                  <tr style="background-color:#E7E6E6;"><td colspan="4" style="padding:15px;text-align:center;font-weight:bold;font-size:16px;border:1px solid #999;">AI应用研发部 - ${{ secrets.USER }} 【AI算法工程师】 - {data['title']}</td></tr>
                   <tr style="background-color:#FFFF00;font-weight:bold;">
                       <td style="width:10%;background-color:#fff;border:1px solid #999;border-right:none;"></td>
                       <td style="width:30%;padding:10px;border:1px solid #999;">本周完成情况</td>
@@ -127,11 +148,11 @@ jobs:
               print(generate_html(data))
           EOF
           
-          # 2. 运行脚本生成 HTML
+          # 运行脚本生成 HTML
           echo "正在转换文件: $LATEST_FILE"
           python convert.py "$LATEST_FILE" > email_body.html
           
-          # 3. 写入环境变量
+          # 写入环境变量
           echo "HTML_BODY<<ENV_END" >> $GITHUB_ENV
           cat email_body.html >> $GITHUB_ENV
           echo "ENV_END" >> $GITHUB_ENV
@@ -145,14 +166,13 @@ jobs:
           server_port: 465
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
-          # 邮件标题：周报 - 2026年01月19日~01月23日 - 唐立杨
           subject: "周报 - ${{ env.CURRENT_DATE }} - ${{ secrets.USER}}"
           
           # 邮件正文 (HTML)
           html_body: ${{ env.HTML_BODY }}
           
-          # 收件人与抄送
-          to: ${{ secrets.MAIL_TO }}
-          cc: ${{ secrets.MAIL_CC }}
+          # 收件人与抄送 (从步骤2中获取)
+          to: ${{ env.MAIL_TO }}
+          cc: ${{ env.MAIL_CC }}
           from: "耀安科技AI应用研发部算法 ${{ secrets.USER }}"
           secure: true
